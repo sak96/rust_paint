@@ -1,0 +1,13 @@
+[package]
+name = "rusty_paint"
+version = "0.1.0"
+edition = "2018"
+license = "GPL-3.0-only"
+description = "natural media (rusty) painting application"
+
+[dependencies]
+winit_input_helper = "0.10.0"
+winit = "0.25.0"
+wgpu = "0.9.0"
+futures = "0.3.16"
+bytemuck = { version = "1.4", features = [ "derive" ] }
