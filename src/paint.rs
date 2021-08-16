@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::borrow::Cow;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -6,7 +7,7 @@ use wgpu::{
     PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
     RequestAdapterOptions, ShaderFlags, ShaderModuleDescriptor, ShaderSource, SwapChainDescriptor,
-    TextureUsage, VertexBufferLayout, VertexState,
+    TextureUsage, VertexAttribute, VertexBufferLayout, VertexState,
 };
 
 use winit::{
@@ -19,15 +20,17 @@ use winit_input_helper::WinitInputHelper;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Point {
+    color: [f32; 3],
     pos: [f32; 2],
 }
 
 impl Point {
+    const ATTRIBUTES: [VertexAttribute; 2] = vertex_attr_array![0 => Float32x3,  1 => Float32x2];
     fn desc<'a>() -> VertexBufferLayout<'a> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
             step_mode: InputStepMode::Vertex,
-            attributes: &vertex_attr_array![0 => Float32x2],
+            attributes: &Self::ATTRIBUTES,
         }
     }
 }
@@ -102,6 +105,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
     let mut strokes = vec![];
+    let mut color = [0.0, 0.0, 0.0];
+    let mut rng = rand::thread_rng();
 
     event_loop.run(move |event, _, control_flow| {
         let _ = (&instance, &adapter, &shader, &pipeline_layout);
@@ -136,7 +141,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                             view: &frame.view,
                             resolve_target: None,
                             ops: Operations {
-                                load: LoadOp::Clear(Color::GREEN),
+                                load: LoadOp::Clear(Color::WHITE),
                                 store: true,
                             },
                         }],
@@ -160,6 +165,13 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                         return;
                     }
                     let mouse_diff = input.mouse_diff();
+                    if input.mouse_pressed(1) {
+                        color = [
+                            rng.gen_range(0.0..1.0),
+                            rng.gen_range(0.0..1.0),
+                            rng.gen_range(0.0..1.0),
+                        ]
+                    }
                     if input.mouse_held(0) && (mouse_diff.0 != 0.0 || mouse_diff.1 != 0.0) {
                         if let Some((mouse_x, mouse_y)) = input.mouse() {
                             let width = size.width as f32;
@@ -169,12 +181,14 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                             let mouse_diff_wgpu = (mouse_diff.0 / width, mouse_diff.1 / (height));
                             strokes.push(Point {
                                 pos: [mouse_x_wgpu, mouse_y_wgpu],
+                                color: color.clone(),
                             });
                             strokes.push(Point {
                                 pos: [
                                     mouse_x_wgpu - mouse_diff_wgpu.0,
                                     mouse_y_wgpu + mouse_diff_wgpu.1,
                                 ],
+                                color: color.clone(),
                             });
                             window.request_redraw();
                         }
