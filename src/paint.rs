@@ -1,14 +1,12 @@
 use rand::Rng;
-use crate::brush::Brush;
+use crate::brush::{Brush, Point};
 use std::borrow::Cow;
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    vertex_attr_array, BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
-    Features, FragmentState, InputStepMode, Instance, Limits, LoadOp, MultisampleState, Operations,
+use wgpu::{ util::{BufferInitDescriptor, DeviceExt}, BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
+    Features, FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
     PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
     RequestAdapterOptions, ShaderFlags, ShaderModuleDescriptor, ShaderSource, SwapChainDescriptor,
-    TextureUsage, VertexAttribute, VertexBufferLayout, VertexState,
+    TextureUsage, VertexState,
 };
 
 use winit::{
@@ -17,24 +15,6 @@ use winit::{
     window::Window,
 };
 use winit_input_helper::WinitInputHelper;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Point {
-    color: [f32; 3],
-    pos: [f32; 2],
-}
-
-impl Point {
-    const ATTRIBUTES: [VertexAttribute; 2] = vertex_attr_array![0 => Float32x3,  1 => Float32x2];
-    fn desc<'a>() -> VertexBufferLayout<'a> {
-        VertexBufferLayout {
-            array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
-            step_mode: InputStepMode::Vertex,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
-}
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
@@ -165,7 +145,6 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                         *control_flow = ControlFlow::Exit;
                         return;
                     }
-                    let mouse_diff = input.mouse_diff();
                     if input.mouse_pressed(1) {
                         brush.set_color([
                             rng.gen_range(0.0..1.0),
@@ -173,24 +152,14 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                             rng.gen_range(0.0..1.0),
                         ])
                     }
-                    if input.mouse_held(0) && (mouse_diff.0 != 0.0 || mouse_diff.1 != 0.0) {
-                        if let Some((mouse_x, mouse_y)) = input.mouse() {
-                            let width = size.width as f32;
-                            let height = size.height as f32;
-                            let mouse_x_wgpu = mouse_x / width - 0.5;
-                            let mouse_y_wgpu = -mouse_y / height + 0.5;
-                            let mouse_diff_wgpu = (mouse_diff.0 / width, mouse_diff.1 / (height));
-                            strokes.push(Point {
-                                pos: [mouse_x_wgpu, mouse_y_wgpu],
-                                color: brush.color(),
-                            });
-                            strokes.push(Point {
-                                pos: [
-                                    mouse_x_wgpu - mouse_diff_wgpu.0,
-                                    mouse_y_wgpu + mouse_diff_wgpu.1,
-                                ],
-                                color: brush.color(),
-                            });
+                    if let Some((x,y)) = input.mouse() {
+                        let width = size.width as f32;
+                        let height = size.height as f32;
+                        let x = x / width - 0.5;
+                        let y = -y/ height + 0.5;
+                        if let Some((start, end)) = brush.draw_stroke(input.mouse_held(0), [x,y]) {
+                            strokes.push(start);
+                            strokes.push(end);
                             window.request_redraw();
                         }
                     }
