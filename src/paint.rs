@@ -1,4 +1,5 @@
 use rand::Rng;
+use crate::brush::Brush;
 use std::borrow::Cow;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -37,6 +38,7 @@ impl Point {
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
+    let mut brush = Brush::default();
     let mut size = window.inner_size();
     let instance = Instance::new(BackendBit::all());
     let surface = unsafe { instance.create_surface(&window) };
@@ -105,7 +107,6 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
 
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
     let mut strokes = vec![];
-    let mut color = [0.0, 0.0, 0.0];
     let mut rng = rand::thread_rng();
 
     event_loop.run(move |event, _, control_flow| {
@@ -166,11 +167,11 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     }
                     let mouse_diff = input.mouse_diff();
                     if input.mouse_pressed(1) {
-                        color = [
+                        brush.set_color([
                             rng.gen_range(0.0..1.0),
                             rng.gen_range(0.0..1.0),
                             rng.gen_range(0.0..1.0),
-                        ]
+                        ])
                     }
                     if input.mouse_held(0) && (mouse_diff.0 != 0.0 || mouse_diff.1 != 0.0) {
                         if let Some((mouse_x, mouse_y)) = input.mouse() {
@@ -181,14 +182,14 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                             let mouse_diff_wgpu = (mouse_diff.0 / width, mouse_diff.1 / (height));
                             strokes.push(Point {
                                 pos: [mouse_x_wgpu, mouse_y_wgpu],
-                                color,
+                                color: brush.color(),
                             });
                             strokes.push(Point {
                                 pos: [
                                     mouse_x_wgpu - mouse_diff_wgpu.0,
                                     mouse_y_wgpu + mouse_diff_wgpu.1,
                                 ],
-                                color,
+                                color: brush.color(),
                             });
                             window.request_redraw();
                         }

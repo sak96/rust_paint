@@ -1,5 +1,6 @@
 use winit::{event_loop::EventLoop, window::Window};
 
+mod brush;
 mod paint;
 
 fn main() {
