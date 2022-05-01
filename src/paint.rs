@@ -181,14 +181,14 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                             let mouse_diff_wgpu = (mouse_diff.0 / width, mouse_diff.1 / (height));
                             strokes.push(Point {
                                 pos: [mouse_x_wgpu, mouse_y_wgpu],
-                                color: color.clone(),
+                                color,
                             });
                             strokes.push(Point {
                                 pos: [
                                     mouse_x_wgpu - mouse_diff_wgpu.0,
                                     mouse_y_wgpu + mouse_diff_wgpu.1,
                                 ],
-                                color: color.clone(),
+                                color,
                             });
                             window.request_redraw();
                         }
