@@ -1,5 +1,6 @@
 use rand::Rng;
 use crate::brush::{Brush, Point};
+use crate::canvas::Canvas;
 use std::borrow::Cow;
 use wgpu::{ util::{BufferInitDescriptor, DeviceExt}, BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
     Features, FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
@@ -18,8 +19,7 @@ use winit_input_helper::WinitInputHelper;
 
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
-    let mut brush = Brush::default();
-    let mut size = window.inner_size();
+    let size = window.inner_size();
     let instance = Instance::new(BackendBit::all());
     let surface = unsafe { instance.create_surface(&window) };
     let adapter = instance
@@ -85,6 +85,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
         present_mode: PresentMode::Mailbox,
     };
 
+    let mut brush = Brush::default();
+    let mut canvas = Canvas::new(size);
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
     let mut strokes = vec![];
     let mut rng = rand::thread_rng();
@@ -100,7 +102,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             } => {
                 sc_desc.width = new_size.width;
                 sc_desc.height = new_size.height;
-                size = new_size;
+                canvas.resize_window(new_size);
                 swap_chain = device.create_swap_chain(&surface, &sc_desc);
             }
             Event::RedrawRequested(_) => {
@@ -153,11 +155,9 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                         ])
                     }
                     if let Some((x,y)) = input.mouse() {
-                        let width = size.width as f32;
-                        let height = size.height as f32;
-                        let x = x / width - 0.5;
-                        let y = -y/ height + 0.5;
-                        if let Some((start, end)) = brush.draw_stroke(input.mouse_held(0), [x,y]) {
+                        if let Some((start, end)) = brush.draw_stroke(
+                            input.mouse_held(0), canvas.get_canvas_pos([x,y])
+                        ) {
                             strokes.push(start);
                             strokes.push(end);
                             window.request_redraw();
