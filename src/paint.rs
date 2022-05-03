@@ -2,7 +2,9 @@ use rand::Rng;
 use crate::brush::{Brush, Point};
 use crate::canvas::Canvas;
 use std::borrow::Cow;
-use wgpu::{ util::{BufferInitDescriptor, DeviceExt}, BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
+use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt}, 
+    BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
     Features, FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
     PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
