@@ -5,6 +5,7 @@ pub struct Brush {
     color: [f32; 3],
     pos: [f32; 2],
     down: bool,
+    radius: f32,
 }
 
 #[repr(C)]
@@ -12,11 +13,12 @@ pub struct Brush {
 pub struct Point {
     color: [f32; 3],
     pos: [f32; 2],
+    radius: f32,
 }
 
 impl Point {
-    const ATTRIBUTES: [VertexAttribute; 2] = vertex_attr_array![
-        0 => Float32x3,  1 => Float32x2
+    const ATTRIBUTES: [VertexAttribute; 3] = vertex_attr_array![
+        0 => Float32x3,  1 => Float32x2, 2 => Float32
     ];
     pub fn desc<'a>() -> VertexBufferLayout<'a> {
         VertexBufferLayout {
@@ -32,10 +34,23 @@ impl Brush {
         self.color = color
     }
 
-    #[must_use="stroke output must be used"]
+    pub fn inc_radius(&mut self) {
+        if self.radius < 50.0 {
+            self.radius += 0.5
+        }
+    }
+
+    pub fn dec_radius(&mut self) {
+        if self.radius > 0.5 {
+            self.radius -= 0.5
+        }
+    }
+
+    #[must_use = "stroke output must be used"]
     pub fn draw_stroke(&mut self, down: bool, pos: [f32; 2]) -> Option<(Point, Point)> {
         let prev_pos = self.pos;
         let prev_down = self.down;
+        let radius = self.radius;
         self.down = down;
         self.pos = pos;
         if prev_down && pos != prev_pos {
@@ -44,8 +59,9 @@ impl Brush {
                 Point {
                     pos: prev_pos,
                     color,
+                    radius,
                 },
-                Point { pos, color },
+                Point { pos, color, radius },
             ))
         } else {
             None

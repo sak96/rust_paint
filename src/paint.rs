@@ -3,7 +3,7 @@ use crate::brush::{Brush, Point};
 use crate::canvas::Canvas;
 use std::borrow::Cow;
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt}, 
+    util::{BufferInitDescriptor, DeviceExt},
     BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
     Features, FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
     PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
@@ -145,6 +145,12 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
             } => *control_flow = ControlFlow::Exit,
             _ => {
                 if input.update(&event) {
+                    if input.key_pressed(VirtualKeyCode::Plus) {
+                        brush.inc_radius()
+                    }
+                    if input.key_pressed(VirtualKeyCode::Minus) {
+                        brush.dec_radius()
+                    }
                     if input.key_released(VirtualKeyCode::Escape) || input.quit() {
                         *control_flow = ControlFlow::Exit;
                         return;
