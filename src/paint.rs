@@ -1,6 +1,8 @@
 use rand::Rng;
+use wgpu::{PushConstantRange, ShaderStage};
 use crate::brush::{Brush, Point};
 use crate::canvas::Canvas;
+use crate::colorwheel::ColorWheel;
 use std::borrow::Cow;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
@@ -19,6 +21,7 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
+
 pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
     let size = window.inner_size();
@@ -36,8 +39,8 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
         .request_device(
             &DeviceDescriptor {
                 label: None,
-                features: Features::empty(),
-                limits: Limits::default(),
+                features: Features::PUSH_CONSTANTS,
+                limits: Limits { max_push_constant_size: 32,  ..Limits::default()},
             },
             None,
         )
@@ -50,10 +53,14 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
         flags: ShaderFlags::all(),
     });
 
+    let push_constant = PushConstantRange{
+        stages: ShaderStage::FRAGMENT,
+        range: 0..std::mem::size_of::<ColorWheel>()as u32
+    };
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[],
-        push_constant_ranges: &[],
+        push_constant_ranges: &[push_constant],
     });
 
     let swapchain_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
@@ -90,6 +97,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
     let mut brush = Brush::default();
     let mut canvas = Canvas::new(size);
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
+    let mut colorwheel = ColorWheel::default();
     let mut strokes = vec![];
     let mut rng = rand::thread_rng();
 
@@ -134,6 +142,7 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     });
                     rpass.set_pipeline(&render_pipeline);
                     rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    rpass.set_push_constants(ShaderStage::FRAGMENT, 0,bytemuck::bytes_of(&colorwheel)) ;
                     rpass.draw(0..strokes.len() as u32, 0..1);
                 }
 
@@ -151,16 +160,23 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     if input.key_pressed(VirtualKeyCode::Minus) {
                         brush.dec_radius()
                     }
+                    if input.key_pressed(VirtualKeyCode::Space) {
+                        colorwheel.toggle();
+                        window.request_redraw();
+                    }
                     if input.key_released(VirtualKeyCode::Escape) || input.quit() {
                         *control_flow = ControlFlow::Exit;
                         return;
                     }
                     if input.mouse_pressed(1) {
-                        brush.set_color([
+                        let color = [
                             rng.gen_range(0.0..1.0),
                             rng.gen_range(0.0..1.0),
                             rng.gen_range(0.0..1.0),
-                        ])
+                        ];
+                        brush.set_color(color);
+                        colorwheel.set_color(color);
+                        window.request_redraw();
                     }
                     if let Some((x,y)) = input.mouse() {
                         if let Some((start, end)) = brush.draw_stroke(
