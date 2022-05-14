@@ -1,4 +1,4 @@
-use wgpu::{vertex_attr_array, InputStepMode, VertexAttribute, VertexBufferLayout};
+use wgpu::{vertex_attr_array, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
 #[derive(Default)]
 pub struct Brush {
@@ -23,7 +23,7 @@ impl Point {
     pub fn desc<'a>() -> VertexBufferLayout<'a> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
-            step_mode: InputStepMode::Vertex,
+            step_mode: VertexStepMode::Vertex,
             attributes: &Self::ATTRIBUTES,
         }
     }

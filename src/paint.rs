@@ -5,14 +5,13 @@ use rand::Rng;
 use std::borrow::Cow;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor, Features,
+    Backends, BufferUsages, Color, CommandEncoderDescriptor, DeviceDescriptor, Features,
     FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
-    PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
+    PipelineLayoutDescriptor, PowerPreference, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-    RequestAdapterOptions, ShaderFlags, ShaderModuleDescriptor, ShaderSource, SwapChainDescriptor,
-    TextureUsage, VertexState,
+    RequestAdapterOptions, ShaderModuleDescriptor, ShaderSource, VertexState,
 };
-use wgpu::{PushConstantRange, ShaderStage};
+use wgpu::{PushConstantRange, ShaderStages};
 
 use winit::{
     event::{Event, VirtualKeyCode, WindowEvent},
@@ -24,11 +23,12 @@ use winit_input_helper::WinitInputHelper;
 pub fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
     let size = window.inner_size();
-    let instance = Instance::new(BackendBit::all());
+    let instance = Instance::new(Backends::all());
     let surface = unsafe { instance.create_surface(&window) };
     let adapter = futures::executor::block_on(instance.request_adapter(&RequestAdapterOptions {
         power_preference: PowerPreference::default(),
         compatible_surface: Some(&surface),
+        force_fallback_adapter: false,
     }))
     .expect("Failed to find an appropriate adapter");
 
@@ -44,15 +44,22 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         None,
     ))
     .expect("Failed to create device");
+    let mut surface_config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: surface.get_preferred_format(&adapter).unwrap(),
+        width: size.width,
+        height: size.height,
+        present_mode: wgpu::PresentMode::Fifo,
+    };
+    surface.configure(&device, &surface_config);
 
     let shader = device.create_shader_module(&ShaderModuleDescriptor {
         label: None,
         source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-        flags: ShaderFlags::all(),
     });
 
     let push_constant = PushConstantRange {
-        stages: ShaderStage::FRAGMENT,
+        stages: ShaderStages::FRAGMENT,
         range: 0..std::mem::size_of::<ColorWheel>() as u32,
     };
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -61,10 +68,8 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         push_constant_ranges: &[push_constant],
     });
 
-    let swapchain_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
-
     let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: None,
+        label: Some("paint pipeline"),
         layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &shader,
@@ -74,7 +79,11 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         fragment: Some(FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            targets: &[swapchain_format.into()],
+            targets: &[wgpu::ColorTargetState {
+                format: surface_config.format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            }],
         }),
         primitive: PrimitiveState {
             topology: PrimitiveTopology::LineList,
@@ -82,19 +91,11 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         },
         depth_stencil: None,
         multisample: MultisampleState::default(),
+        multiview: None,
     });
-
-    let mut sc_desc = SwapChainDescriptor {
-        usage: TextureUsage::RENDER_ATTACHMENT,
-        format: swapchain_format,
-        width: size.width,
-        height: size.height,
-        present_mode: PresentMode::Mailbox,
-    };
 
     let mut brush = Brush::default();
     let mut canvas = Canvas::new(size);
-    let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
     let mut colorwheel = ColorWheel::default();
     let mut strokes = vec![];
     let mut rng = rand::thread_rng();
@@ -108,28 +109,31 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                 event: WindowEvent::Resized(new_size),
                 ..
             } => {
-                sc_desc.width = new_size.width;
-                sc_desc.height = new_size.height;
+                surface_config.width = new_size.width;
+                surface_config.height = new_size.height;
+                surface.configure(&device, &surface_config);
                 canvas.resize_window(new_size);
-                swap_chain = device.create_swap_chain(&surface, &sc_desc);
             }
             Event::RedrawRequested(_) => {
                 let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::cast_slice(&strokes),
-                    usage: BufferUsage::VERTEX,
+                    usage: BufferUsages::VERTEX,
                 });
-                let frame = swap_chain
-                    .get_current_frame()
-                    .expect("Failed to acquire next swap chain texture")
-                    .output;
-                let mut encoder =
-                    device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+                let output_texture = surface
+                    .get_current_texture()
+                    .expect("failed to get texture for rendering");
+                let view = output_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("paint encoder"),
+                });
                 {
                     let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: None,
                         color_attachments: &[RenderPassColorAttachment {
-                            view: &frame.view,
+                            view: &view,
                             resolve_target: None,
                             ops: Operations {
                                 load: LoadOp::Clear(Color::WHITE),
@@ -141,7 +145,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                     rpass.set_pipeline(&render_pipeline);
                     rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     rpass.set_push_constants(
-                        ShaderStage::FRAGMENT,
+                        ShaderStages::FRAGMENT,
                         0,
                         bytemuck::bytes_of(&colorwheel),
                     );
@@ -149,6 +153,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                 }
 
                 queue.submit(Some(encoder.finish()));
+                output_texture.present();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
