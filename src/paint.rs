@@ -1,18 +1,18 @@
-use rand::Rng;
-use wgpu::{PushConstantRange, ShaderStage};
 use crate::brush::{Brush, Point};
 use crate::canvas::Canvas;
 use crate::colorwheel::ColorWheel;
+use rand::Rng;
 use std::borrow::Cow;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor,
-    Features, FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
+    BackendBit, BufferUsage, Color, CommandEncoderDescriptor, DeviceDescriptor, Features,
+    FragmentState, Instance, Limits, LoadOp, MultisampleState, Operations,
     PipelineLayoutDescriptor, PowerPreference, PresentMode, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
     RequestAdapterOptions, ShaderFlags, ShaderModuleDescriptor, ShaderSource, SwapChainDescriptor,
     TextureUsage, VertexState,
 };
+use wgpu::{PushConstantRange, ShaderStage};
 
 use winit::{
     event::{Event, VirtualKeyCode, WindowEvent},
@@ -21,31 +21,29 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
-
-pub async fn run(event_loop: EventLoop<()>, window: Window) {
+pub fn run(event_loop: EventLoop<()>, window: Window) {
     let mut input = WinitInputHelper::new();
     let size = window.inner_size();
     let instance = Instance::new(BackendBit::all());
     let surface = unsafe { instance.create_surface(&window) };
-    let adapter = instance
-        .request_adapter(&RequestAdapterOptions {
-            power_preference: PowerPreference::default(),
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
+    let adapter = futures::executor::block_on(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::default(),
+        compatible_surface: Some(&surface),
+    }))
+    .expect("Failed to find an appropriate adapter");
 
-    let (device, queue) = adapter
-        .request_device(
-            &DeviceDescriptor {
-                label: None,
-                features: Features::PUSH_CONSTANTS,
-                limits: Limits { max_push_constant_size: 32,  ..Limits::default()},
+    let (device, queue) = futures::executor::block_on(adapter.request_device(
+        &DeviceDescriptor {
+            label: None,
+            features: Features::PUSH_CONSTANTS,
+            limits: Limits {
+                max_push_constant_size: 32,
+                ..Limits::default()
             },
-            None,
-        )
-        .await
-        .expect("Failed to create device");
+        },
+        None,
+    ))
+    .expect("Failed to create device");
 
     let shader = device.create_shader_module(&ShaderModuleDescriptor {
         label: None,
@@ -53,9 +51,9 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
         flags: ShaderFlags::all(),
     });
 
-    let push_constant = PushConstantRange{
+    let push_constant = PushConstantRange {
         stages: ShaderStage::FRAGMENT,
-        range: 0..std::mem::size_of::<ColorWheel>()as u32
+        range: 0..std::mem::size_of::<ColorWheel>() as u32,
     };
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: None,
@@ -142,7 +140,11 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                     });
                     rpass.set_pipeline(&render_pipeline);
                     rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                    rpass.set_push_constants(ShaderStage::FRAGMENT, 0,bytemuck::bytes_of(&colorwheel)) ;
+                    rpass.set_push_constants(
+                        ShaderStage::FRAGMENT,
+                        0,
+                        bytemuck::bytes_of(&colorwheel),
+                    );
                     rpass.draw(0..strokes.len() as u32, 0..1);
                 }
 
@@ -178,10 +180,10 @@ pub async fn run(event_loop: EventLoop<()>, window: Window) {
                         colorwheel.set_color(color);
                         window.request_redraw();
                     }
-                    if let Some((x,y)) = input.mouse() {
-                        if let Some((start, end)) = brush.draw_stroke(
-                            input.mouse_held(0), canvas.get_canvas_pos([x,y])
-                        ) {
+                    if let Some((x, y)) = input.mouse() {
+                        if let Some((start, end)) =
+                            brush.draw_stroke(input.mouse_held(0), canvas.get_canvas_pos([x, y]))
+                        {
                             strokes.push(start);
                             strokes.push(end);
                             window.request_redraw();
