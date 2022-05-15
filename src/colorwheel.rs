@@ -7,7 +7,7 @@ pub struct ColorWheel {
 
 impl ColorWheel {
     pub fn set_color(&mut self, color: [f32; 3]) {
-        self.color = color
+        self.color = color;
     }
 
     pub fn toggle(&mut self) {

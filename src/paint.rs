@@ -85,7 +85,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         }),
         primitive: PrimitiveState {
             topology: PrimitiveTopology::LineList,
-            ..Default::default()
+            ..PrimitiveState::default()
         },
         depth_stencil: None,
         multisample: MultisampleState::default(),
@@ -120,10 +120,10 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
             _ => {
                 if input.update(&event) {
                     if input.key_pressed(VirtualKeyCode::Plus) {
-                        brush.inc_radius()
+                        brush.inc_radius();
                     }
                     if input.key_pressed(VirtualKeyCode::Minus) {
-                        brush.dec_radius()
+                        brush.dec_radius();
                     }
                     if input.key_pressed(VirtualKeyCode::Space) {
                         canvas.color_wheel_toogle();

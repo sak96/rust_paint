@@ -90,6 +90,6 @@ impl Canvas {
     }
 
     pub fn resize_window(&mut self, window_size: PhysicalSize<u32>) {
-        self.window_size = window_size
+        self.window_size = window_size;
     }
 }

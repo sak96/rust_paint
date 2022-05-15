@@ -20,9 +20,10 @@ impl Point {
     const ATTRIBUTES: [VertexAttribute; 3] = vertex_attr_array![
         0 => Float32x3,  1 => Float32x2, 2 => Float32
     ];
-    pub fn desc<'a>() -> VertexBufferLayout<'a> {
+
+    pub const fn desc<'a>() -> VertexBufferLayout<'a> {
         VertexBufferLayout {
-            array_stride: std::mem::size_of::<Point>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &Self::ATTRIBUTES,
         }
@@ -30,19 +31,9 @@ impl Point {
 }
 
 impl Brush {
-    pub fn set_color(&mut self, color: [f32; 3]) {
-        self.color = color
-    }
-
-    pub fn inc_radius(&mut self) {
-        if self.radius < 50.0 {
-            self.radius += 0.5
-        }
-    }
-
     pub fn dec_radius(&mut self) {
         if self.radius > 0.5 {
-            self.radius -= 0.5
+            self.radius -= 0.5;
         }
     }
 
@@ -61,10 +52,20 @@ impl Brush {
                     color,
                     radius,
                 },
-                Point { pos, color, radius },
+                Point { color, pos, radius },
             ))
         } else {
             None
         }
+    }
+
+    pub fn inc_radius(&mut self) {
+        if self.radius < 50.0 {
+            self.radius += 0.5;
+        }
+    }
+
+    pub fn set_color(&mut self, color: [f32; 3]) {
+        self.color = color;
     }
 }
