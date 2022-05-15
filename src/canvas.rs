@@ -18,7 +18,8 @@ pub struct Canvas {
     _adapter: Adapter,
     queue: Queue,
     device: Device,
-    render_pipeline: RenderPipeline,
+    paint_pipeline: RenderPipeline,
+    colorwheel_pipeline: RenderPipeline,
     surface_config: SurfaceConfiguration,
 }
 
@@ -39,6 +40,90 @@ impl Canvas {
         [pos[0] / width - 0.5, -pos[1] / height + 0.5]
     }
 
+    fn create_paint_pipeline(
+        device: &Device,
+        surface_config: &SurfaceConfiguration,
+    ) -> RenderPipeline {
+        let paint_shader = device.create_shader_module(&ShaderModuleDescriptor {
+            label: Some("paint shader"),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+        let paint_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("paint layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("paint pipeline"),
+            layout: Some(&paint_layout),
+            vertex: VertexState {
+                module: &paint_shader,
+                entry_point: "vs_main",
+                buffers: &[Point::desc()],
+            },
+            fragment: Some(FragmentState {
+                module: &paint_shader,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::LineList,
+                ..PrimitiveState::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+        })
+    }
+
+    fn create_colorwheel_pipeline(
+        device: &Device,
+        surface_config: &SurfaceConfiguration,
+    ) -> RenderPipeline {
+        let colorwheel_shader = device.create_shader_module(&ShaderModuleDescriptor {
+            label: Some("color wheel shader"),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("colorwheel.wgsl"))),
+        });
+        let colorwheel = PushConstantRange {
+            stages: ShaderStages::FRAGMENT,
+            range: 0..std::mem::size_of::<ColorWheel>() as u32,
+        };
+        let colorwheel_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("color wheel layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[colorwheel],
+        });
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("color wheel pipeline"),
+            layout: Some(&colorwheel_layout),
+            vertex: VertexState {
+                module: &colorwheel_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(FragmentState {
+                module: &colorwheel_shader,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..PrimitiveState::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+        })
+    }
+
     pub fn new(
         window_size: PhysicalSize<u32>,
         surface: Surface,
@@ -54,52 +139,17 @@ impl Canvas {
             present_mode: wgpu::PresentMode::Fifo,
         };
         surface.configure(&device, &surface_config);
-        let shader = device.create_shader_module(&ShaderModuleDescriptor {
-            label: None,
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shader.wgsl"))),
-        });
-        let push_constant = PushConstantRange {
-            stages: ShaderStages::FRAGMENT,
-            range: 0..std::mem::size_of::<ColorWheel>() as u32,
-        };
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[],
-            push_constant_ranges: &[push_constant],
-        });
-        let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("paint pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Point::desc()],
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
-                    format: surface_config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
-            }),
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::LineList,
-                ..PrimitiveState::default()
-            },
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            multiview: None,
-        });
+        let paint_pipeline = Self::create_paint_pipeline(&device, &surface_config);
+        let colorwheel_pipeline = Self::create_colorwheel_pipeline(&device, &surface_config);
         Self {
             window_size,
             surface,
             surface_config,
             device,
-            render_pipeline,
+            paint_pipeline,
             strokes: vec![],
             queue,
+            colorwheel_pipeline,
             _adapter: adapter,
             colorwheel: ColorWheel::default(),
         }
@@ -115,15 +165,15 @@ impl Canvas {
             .surface
             .get_current_texture()
             .expect("failed to get texture for rendering");
-        let view = output_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("paint encoder"),
             });
         {
+            let view = output_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: None,
                 color_attachments: &[RenderPassColorAttachment {
@@ -136,14 +186,18 @@ impl Canvas {
                 }],
                 depth_stencil_attachment: None,
             });
-            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_pipeline(&self.paint_pipeline);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            rpass.set_push_constants(
-                ShaderStages::FRAGMENT,
-                0,
-                bytemuck::bytes_of(&self.colorwheel),
-            );
             rpass.draw(0..self.strokes.len() as u32, 0..1);
+            if self.colorwheel.is_enabled() {
+                rpass.set_pipeline(&self.colorwheel_pipeline);
+                rpass.set_push_constants(
+                    ShaderStages::FRAGMENT,
+                    0,
+                    bytemuck::bytes_of(&self.colorwheel),
+                );
+                rpass.draw(0..4, 0..1);
+            }
         }
         self.queue.submit(Some(encoder.finish()));
         output_texture.present();

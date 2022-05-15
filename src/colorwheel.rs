@@ -6,6 +6,9 @@ pub struct ColorWheel {
 }
 
 impl ColorWheel {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled > 0.0
+    }
     pub fn set_color(&mut self, color: [f32; 3]) {
         self.color = color;
     }
