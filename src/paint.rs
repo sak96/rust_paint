@@ -1,15 +1,8 @@
-use crate::brush::Point;
 use crate::canvas::Canvas;
-use crate::colorwheel::ColorWheel;
 use crate::event::InputHandler;
-use std::borrow::Cow;
 use wgpu::{
-    Backends, DeviceDescriptor, Features, FragmentState, Instance, Limits, MultisampleState,
-    PipelineLayoutDescriptor, PowerPreference, PrimitiveState, PrimitiveTopology,
-    RenderPipelineDescriptor, RequestAdapterOptions, ShaderModuleDescriptor, ShaderSource,
-    VertexState,
+    Backends, DeviceDescriptor, Features, Instance, Limits, PowerPreference, RequestAdapterOptions,
 };
-use wgpu::{PushConstantRange, ShaderStages};
 
 use winit::{
     event::{Event, WindowEvent},
@@ -42,59 +35,10 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         None,
     ))
     .expect("Failed to create device");
-    let mut surface_config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: surface.get_preferred_format(&adapter).unwrap(),
-        width: size.width,
-        height: size.height,
-        present_mode: wgpu::PresentMode::Fifo,
-    };
-    surface.configure(&device, &surface_config);
-
-    let shader = device.create_shader_module(&ShaderModuleDescriptor {
-        label: None,
-        source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
-    });
-
-    let push_constant = PushConstantRange {
-        stages: ShaderStages::FRAGMENT,
-        range: 0..std::mem::size_of::<ColorWheel>() as u32,
-    };
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[],
-        push_constant_ranges: &[push_constant],
-    });
-
-    let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("paint pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: VertexState {
-            module: &shader,
-            entry_point: "vs_main",
-            buffers: &[Point::desc()],
-        },
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: "fs_main",
-            targets: &[wgpu::ColorTargetState {
-                format: surface_config.format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            }],
-        }),
-        primitive: PrimitiveState {
-            topology: PrimitiveTopology::LineList,
-            ..PrimitiveState::default()
-        },
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        multiview: None,
-    });
-    let mut canvas = Canvas::new(size);
     let mut input_handler = InputHandler::new();
+    let mut canvas = Canvas::new(size, surface, device, adapter, queue);
     event_loop.run(move |event, _, control_flow| {
-        let _ = (&instance, &adapter, &shader, &pipeline_layout);
+        let _ = &instance;
 
         *control_flow = ControlFlow::Wait;
         match event {
@@ -102,13 +46,10 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                 event: WindowEvent::Resized(new_size),
                 ..
             } => {
-                surface_config.width = new_size.width;
-                surface_config.height = new_size.height;
-                surface.configure(&device, &surface_config);
                 canvas.resize_window(new_size);
             }
             Event::RedrawRequested(_) => {
-                canvas.redraw_canvas(&device, &surface, &render_pipeline, &queue);
+                canvas.redraw_canvas();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -120,7 +61,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
                     if redraw_window {
                         window.request_redraw();
                     }
-               }
+                }
             }
         }
     });

@@ -1,7 +1,10 @@
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    BufferUsages, Color, CommandEncoderDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-    RenderPassDescriptor, ShaderStages,
+    Adapter, BufferUsages, Color, CommandEncoderDescriptor, Device, FragmentState, LoadOp,
+    MultisampleState, Operations, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
+    PushConstantRange, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, Surface,
+    SurfaceConfiguration, VertexState,
 };
 use winit::dpi::PhysicalSize;
 
@@ -11,12 +14,22 @@ pub struct Canvas {
     window_size: PhysicalSize<u32>,
     strokes: Vec<Point>,
     colorwheel: ColorWheel,
+    surface: Surface,
+    _adapter: Adapter,
+    queue: Queue,
+    device: Device,
+    render_pipeline: RenderPipeline,
+    surface_config: SurfaceConfiguration,
 }
 
 impl Canvas {
     pub fn add_stroke(&mut self, start: Point, end: Point) {
         self.strokes.push(start);
         self.strokes.push(end);
+    }
+
+    pub fn color_wheel_toogle(&mut self) {
+        self.colorwheel.toggle();
     }
 
     #[must_use = "converted position must be used"]
@@ -26,35 +39,90 @@ impl Canvas {
         [pos[0] / width - 0.5, -pos[1] / height + 0.5]
     }
 
-    pub fn new(window_size: PhysicalSize<u32>) -> Self {
+    pub fn new(
+        window_size: PhysicalSize<u32>,
+        surface: Surface,
+        device: Device,
+        adapter: Adapter,
+        queue: Queue,
+    ) -> Self {
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface.get_preferred_format(&adapter).unwrap(),
+            width: window_size.width,
+            height: window_size.height,
+            present_mode: wgpu::PresentMode::Fifo,
+        };
+        surface.configure(&device, &surface_config);
+        let shader = device.create_shader_module(&ShaderModuleDescriptor {
+            label: None,
+            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shader.wgsl"))),
+        });
+        let push_constant = PushConstantRange {
+            stages: ShaderStages::FRAGMENT,
+            range: 0..std::mem::size_of::<ColorWheel>() as u32,
+        };
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[push_constant],
+        });
+        let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("paint pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Point::desc()],
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::LineList,
+                ..PrimitiveState::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview: None,
+        });
         Self {
             window_size,
+            surface,
+            surface_config,
+            device,
+            render_pipeline,
             strokes: vec![],
+            queue,
+            _adapter: adapter,
             colorwheel: ColorWheel::default(),
         }
     }
 
-    pub fn redraw_canvas(
-        &mut self,
-        device: &wgpu::Device,
-        surface: &wgpu::Surface,
-        render_pipeline: &wgpu::RenderPipeline,
-        queue: &wgpu::Queue,
-    ) {
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+    pub fn redraw_canvas(&mut self) {
+        let vertex_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&self.strokes),
             usage: BufferUsages::VERTEX,
         });
-        let output_texture = surface
+        let output_texture = self
+            .surface
             .get_current_texture()
             .expect("failed to get texture for rendering");
         let view = output_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("paint encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("paint encoder"),
+            });
         {
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: None,
@@ -68,7 +136,7 @@ impl Canvas {
                 }],
                 depth_stencil_attachment: None,
             });
-            rpass.set_pipeline(render_pipeline);
+            rpass.set_pipeline(&self.render_pipeline);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
             rpass.set_push_constants(
                 ShaderStages::FRAGMENT,
@@ -77,19 +145,18 @@ impl Canvas {
             );
             rpass.draw(0..self.strokes.len() as u32, 0..1);
         }
-        queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
         output_texture.present();
     }
 
-    pub fn color_wheel_toogle(&mut self) {
-        self.colorwheel.toggle();
+    pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
+        self.surface_config.width = new_size.width;
+        self.surface_config.height = new_size.height;
+        self.surface.configure(&self.device, &self.surface_config);
+        self.window_size = new_size;
     }
 
     pub fn set_color(&mut self, color: [f32; 3]) {
         self.colorwheel.set_color(color);
-    }
-
-    pub fn resize_window(&mut self, window_size: PhysicalSize<u32>) {
-        self.window_size = window_size;
     }
 }
