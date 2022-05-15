@@ -1,7 +1,7 @@
-use crate::brush::{Brush, Point};
+use crate::brush::Point;
 use crate::canvas::Canvas;
 use crate::colorwheel::ColorWheel;
-use rand::Rng;
+use crate::event::InputHandler;
 use std::borrow::Cow;
 use wgpu::{
     Backends, DeviceDescriptor, Features, FragmentState, Instance, Limits, MultisampleState,
@@ -12,7 +12,7 @@ use wgpu::{
 use wgpu::{PushConstantRange, ShaderStages};
 
 use winit::{
-    event::{Event, VirtualKeyCode, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
@@ -91,11 +91,8 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         multisample: MultisampleState::default(),
         multiview: None,
     });
-
-    let mut brush = Brush::default();
     let mut canvas = Canvas::new(size);
-    let mut rng = rand::thread_rng();
-
+    let mut input_handler = InputHandler::new();
     event_loop.run(move |event, _, control_flow| {
         let _ = (&instance, &adapter, &shader, &pipeline_layout);
 
@@ -119,39 +116,11 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
             } => *control_flow = ControlFlow::Exit,
             _ => {
                 if input.update(&event) {
-                    if input.key_pressed(VirtualKeyCode::Plus) {
-                        brush.inc_radius();
-                    }
-                    if input.key_pressed(VirtualKeyCode::Minus) {
-                        brush.dec_radius();
-                    }
-                    if input.key_pressed(VirtualKeyCode::Space) {
-                        canvas.color_wheel_toogle();
+                    let redraw_window = input_handler.handle_input(&input, &mut canvas);
+                    if redraw_window {
                         window.request_redraw();
                     }
-                    if input.key_released(VirtualKeyCode::Escape) || input.quit() {
-                        *control_flow = ControlFlow::Exit;
-                        return;
-                    }
-                    if input.mouse_pressed(1) {
-                        let color = [
-                            rng.gen_range(0.0..1.0),
-                            rng.gen_range(0.0..1.0),
-                            rng.gen_range(0.0..1.0),
-                        ];
-                        brush.set_color(color);
-                        canvas.set_color(color);
-                        window.request_redraw();
-                    }
-                    if let Some((x, y)) = input.mouse() {
-                        if let Some((start, end)) =
-                            brush.draw_stroke(input.mouse_held(0), canvas.get_canvas_pos([x, y]))
-                        {
-                            canvas.add_stroke(start, end);
-                            window.request_redraw();
-                        }
-                    }
-                }
+               }
             }
         }
     });

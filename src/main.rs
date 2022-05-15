@@ -11,6 +11,7 @@ mod brush;
 mod canvas;
 mod colorwheel;
 mod paint;
+mod event;
 
 fn main() {
     let event_loop = EventLoop::new();
