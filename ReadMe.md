@@ -6,3 +6,4 @@ A rust paint WGPU application.
 
 1. draw by press mouse 0 down.
 2. switch to random color by mouse 1 press.
+3. press space to show color wheel.
