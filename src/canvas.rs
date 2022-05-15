@@ -11,7 +11,6 @@ use winit::dpi::PhysicalSize;
 use crate::{brush::Point, colorwheel::ColorWheel};
 
 pub struct Canvas {
-    window_size: PhysicalSize<u32>,
     strokes: Vec<Point>,
     colorwheel: ColorWheel,
     surface: Surface,
@@ -21,6 +20,7 @@ pub struct Canvas {
     paint_pipeline: RenderPipeline,
     colorwheel_pipeline: RenderPipeline,
     surface_config: SurfaceConfiguration,
+    colorwheel_enabled: bool,
 }
 
 impl Canvas {
@@ -30,14 +30,12 @@ impl Canvas {
     }
 
     pub fn color_wheel_toogle(&mut self) {
-        self.colorwheel.toggle();
+        self.colorwheel_enabled = !self.colorwheel_enabled;
     }
 
     #[must_use = "converted position must be used"]
     pub fn get_canvas_pos(&self, pos: [f32; 2]) -> [f32; 2] {
-        let width = self.window_size.width as f32;
-        let height = self.window_size.height as f32;
-        [pos[0] / width - 0.5, -pos[1] / height + 0.5]
+        self.colorwheel.get_canvas_pos(pos)
     }
 
     fn create_paint_pipeline(
@@ -88,7 +86,9 @@ impl Canvas {
             label: Some("color wheel shader"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("colorwheel.wgsl"))),
         });
+        println!("{}",std::mem::size_of::<ColorWheel>() as u32);
         let colorwheel = PushConstantRange {
+
             stages: ShaderStages::FRAGMENT,
             range: 0..std::mem::size_of::<ColorWheel>() as u32,
         };
@@ -142,13 +142,13 @@ impl Canvas {
         let paint_pipeline = Self::create_paint_pipeline(&device, &surface_config);
         let colorwheel_pipeline = Self::create_colorwheel_pipeline(&device, &surface_config);
         Self {
-            window_size,
             surface,
             surface_config,
             device,
             paint_pipeline,
             strokes: vec![],
             queue,
+            colorwheel_enabled: false,
             colorwheel_pipeline,
             _adapter: adapter,
             colorwheel: ColorWheel::default(),
@@ -189,7 +189,7 @@ impl Canvas {
             rpass.set_pipeline(&self.paint_pipeline);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
             rpass.draw(0..self.strokes.len() as u32, 0..1);
-            if self.colorwheel.is_enabled() {
+            if self.colorwheel_enabled {
                 rpass.set_pipeline(&self.colorwheel_pipeline);
                 rpass.set_push_constants(
                     ShaderStages::FRAGMENT,
@@ -207,7 +207,7 @@ impl Canvas {
         self.surface_config.width = new_size.width;
         self.surface_config.height = new_size.height;
         self.surface.configure(&self.device, &self.surface_config);
-        self.window_size = new_size;
+        self.colorwheel.set_size(new_size);
     }
 
     pub fn set_color(&mut self, color: [f32; 3]) {

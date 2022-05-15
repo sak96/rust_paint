@@ -6,8 +6,8 @@ let corners_constants = array<vec4<f32>, 4>(
 );
 
 struct ColorWheel {
-    color: vec3<f32>;
-    enabled: f32;
+    color: vec4<f32>;
+    resolution: vec2<f32>;
 };
 
 var<push_constant> pc: ColorWheel;
@@ -21,7 +21,14 @@ fn vs_main(
     return corners[in_vertex_index];
 }
 
+fn color_square(uv: vec2<f32>) -> vec4<f32>{
+    var lightness: vec3<f32> = vec3<f32>(1.0) * uv.y;
+    var saturation: vec3<f32> = (1.0 - uv.x) * (lightness) + uv.x * pc.color.rgb;
+    return vec4<f32>(saturation, 1.0);
+}
+
 [[stage(fragment)]]
 fn fs_main([[builtin(position)]] in: vec4<f32>) -> [[location(0)]] vec4<f32> {
-    return vec4<f32>(0.3, 0.2, 0.1, 1.0);
+    var normal_in: vec2<f32> = in.xy / pc.resolution.xy;
+    return color_square(normal_in);
 }
