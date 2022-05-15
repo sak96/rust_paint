@@ -53,7 +53,7 @@ impl Brush {
         let radius = self.radius;
         self.down = down;
         self.pos = pos;
-        if prev_down && pos != prev_pos {
+        if prev_down && Self::compare_vec2(pos, prev_pos) {
             let color = self.color;
             Some((
                 Point {
@@ -66,5 +66,10 @@ impl Brush {
         } else {
             None
         }
+    }
+
+    #[inline]
+    pub fn compare_vec2(vec: [f32;2], other: [f32; 2]) -> bool {
+        ((vec[0] - other[0]).abs() < f32::EPSILON) || ((vec[1] - other[1]).abs() < f32::EPSILON)
     }
 }
