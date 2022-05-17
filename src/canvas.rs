@@ -8,7 +8,10 @@ use wgpu::{
 };
 use winit::dpi::PhysicalSize;
 
-use crate::{brush::Point, colorwheel::ColorWheel};
+use crate::{
+    brush::{Brush, Point},
+    colorwheel::ColorWheel,
+};
 
 pub struct Canvas {
     strokes: Vec<Point>,
@@ -16,6 +19,7 @@ pub struct Canvas {
     surface: Surface,
     _adapter: Adapter,
     queue: Queue,
+    brush: Brush,
     device: Device,
     paint_pipeline: RenderPipeline,
     colorwheel_pipeline: RenderPipeline,
@@ -25,18 +29,21 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn add_stroke(&mut self, start: Point, end: Point) {
-        self.strokes.push(start);
-        self.strokes.push(end);
+    pub fn brush_move(&mut self, brush_down: bool, new_pos: [f32; 2]) -> bool {
+        if let Some((start, end)) = self
+            .brush
+            .draw_stroke(brush_down, self.colorwheel.get_canvas_pos(new_pos))
+        {
+            self.strokes.push(start);
+            self.strokes.push(end);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn color_wheel_toogle(&mut self) {
         self.colorwheel_enabled = !self.colorwheel_enabled;
-    }
-
-    #[must_use = "converted position must be used"]
-    pub fn get_canvas_pos(&self, pos: [f32; 2]) -> [f32; 2] {
-        self.colorwheel.get_canvas_pos(pos)
     }
 
     fn create_paint_pipeline(
@@ -153,6 +160,7 @@ impl Canvas {
             _adapter: adapter,
             buffer_dimensions,
             colorwheel: ColorWheel::default(),
+            brush: Brush::default(),
         }
     }
 
@@ -235,6 +243,14 @@ impl Canvas {
         output_texture.present();
     }
 
+    pub fn inc_brush_size(&mut self) {
+        self.brush.inc_radius();
+    }
+
+    pub fn dec_brush_size(&mut self) {
+        self.brush.dec_radius();
+    }
+
     const fn padded_bytes_per_row(&self) -> u64 {
         let bytes_per_pixel = std::mem::size_of::<u32>();
         let unpadded_bytes_per_row = self.buffer_dimensions.width as usize * bytes_per_pixel;
@@ -253,6 +269,7 @@ impl Canvas {
     }
 
     pub fn set_color(&mut self, color: [f32; 3]) {
+        self.brush.set_color(color);
         self.colorwheel.set_color(color);
     }
 }
