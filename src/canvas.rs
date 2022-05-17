@@ -21,6 +21,7 @@ pub struct Canvas {
     colorwheel_pipeline: RenderPipeline,
     surface_config: SurfaceConfiguration,
     colorwheel_enabled: bool,
+    buffer_dimensions: PhysicalSize<u32>,
 }
 
 impl Canvas {
@@ -86,9 +87,7 @@ impl Canvas {
             label: Some("color wheel shader"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("colorwheel.wgsl"))),
         });
-        println!("{}",std::mem::size_of::<ColorWheel>() as u32);
         let colorwheel = PushConstantRange {
-
             stages: ShaderStages::FRAGMENT,
             range: 0..std::mem::size_of::<ColorWheel>() as u32,
         };
@@ -132,12 +131,13 @@ impl Canvas {
         queue: Queue,
     ) -> Self {
         let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: surface.get_preferred_format(&adapter).unwrap(),
             width: window_size.width,
             height: window_size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
+        let buffer_dimensions = window_size;
         surface.configure(&device, &surface_config);
         let paint_pipeline = Self::create_paint_pipeline(&device, &surface_config);
         let colorwheel_pipeline = Self::create_colorwheel_pipeline(&device, &surface_config);
@@ -151,6 +151,7 @@ impl Canvas {
             colorwheel_enabled: false,
             colorwheel_pipeline,
             _adapter: adapter,
+            buffer_dimensions,
             colorwheel: ColorWheel::default(),
         }
     }
@@ -199,14 +200,55 @@ impl Canvas {
                 rpass.draw(0..4, 0..1);
             }
         }
+
+        let texture_extent = wgpu::Extent3d {
+            width: self.buffer_dimensions.width,
+            height: self.buffer_dimensions.height,
+            depth_or_array_layers: 1,
+        };
+        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output buffer"),
+            size: self.padded_bytes_per_row() * u64::from(self.buffer_dimensions.height),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
+                texture: &output_texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            wgpu::ImageCopyBuffer {
+                buffer: &output_buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(
+                        std::num::NonZeroU32::new(self.padded_bytes_per_row() as u32).unwrap(),
+                    ),
+                    rows_per_image: None,
+                },
+            },
+            texture_extent,
+        );
         self.queue.submit(Some(encoder.finish()));
         output_texture.present();
+    }
+
+    const fn padded_bytes_per_row(&self) -> u64 {
+        let bytes_per_pixel = std::mem::size_of::<u32>();
+        let unpadded_bytes_per_row = self.buffer_dimensions.width as usize * bytes_per_pixel;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
+        let padded_bytes_per_row_padding = (align - unpadded_bytes_per_row % align) % align;
+        let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
+        padded_bytes_per_row as u64
     }
 
     pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
         self.surface_config.width = new_size.width;
         self.surface_config.height = new_size.height;
         self.surface.configure(&self.device, &self.surface_config);
+        self.buffer_dimensions = new_size;
         self.colorwheel.set_size(new_size);
     }
 
