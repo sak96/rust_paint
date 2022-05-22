@@ -1,10 +1,10 @@
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    Adapter, BufferUsages, Color, CommandEncoderDescriptor, Device, FragmentState, LoadOp,
-    MultisampleState, Operations, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
-    PushConstantRange, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, Surface,
-    SurfaceConfiguration, VertexState,
+    Adapter, Buffer, BufferUsages, Color, CommandEncoderDescriptor, Device, Extent3d,
+    FragmentState, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor, PrimitiveState,
+    PrimitiveTopology, PushConstantRange, Queue, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    Surface, SurfaceConfiguration, VertexState,
 };
 use winit::dpi::PhysicalSize;
 
@@ -21,6 +21,8 @@ pub struct Canvas {
     queue: Queue,
     brush: Brush,
     device: Device,
+    output_buffer: Buffer,
+    brush_down: bool,
     paint_pipeline: RenderPipeline,
     colorwheel_pipeline: RenderPipeline,
     surface_config: SurfaceConfiguration,
@@ -29,8 +31,36 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn brush_move(&mut self, brush_down: bool, new_pos: [f32; 2]) -> bool {
-        if let Some((start, end)) = self
+    pub fn mouse_at(&mut self, brush_down: bool, new_pos: [f32; 2]) -> bool {
+        let prev_brush_down = self.brush_down;
+        self.brush_down = brush_down;
+        if self.colorwheel_enabled && brush_down && !prev_brush_down {
+            let buffer_slice = self.output_buffer.slice(..);
+            let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
+            let width = new_pos[0].round().abs() as usize;
+            let height = new_pos[1].round().abs() as usize;
+            self.device.poll(wgpu::Maintain::Wait);
+            let mut color_set = false;
+            if futures::executor::block_on(buffer_future).is_ok() {
+                let padded_buffer = buffer_slice.get_mapped_range();
+                if let Some(padded_row) = padded_buffer
+                    .chunks(Self::padded_bytes_per_row(self.buffer_dimensions) as usize)
+                    .nth(height)
+                {
+                    if let Some(color_rgba) = padded_row.chunks(4).nth(width) {
+                        let red = f32::from(color_rgba[2]) / 0xFF as f32;
+                        let green = f32::from(color_rgba[0]) / 0xFF as f32;
+                        let blue = f32::from(color_rgba[1]) / 0xFF as f32;
+                        let color = [red, blue, green];
+                        self.colorwheel.set_color(color);
+                        self.brush.set_color(color);
+                        color_set = true;
+                    }
+                }
+            }
+            self.output_buffer.unmap();
+            color_set
+        } else if let Some((start, end)) = self
             .brush
             .draw_stroke(brush_down, self.colorwheel.get_canvas_pos(new_pos))
         {
@@ -148,6 +178,7 @@ impl Canvas {
         surface.configure(&device, &surface_config);
         let paint_pipeline = Self::create_paint_pipeline(&device, &surface_config);
         let colorwheel_pipeline = Self::create_colorwheel_pipeline(&device, &surface_config);
+        let output_buffer = Self::create_output_buffer(&device, buffer_dimensions);
         Self {
             surface,
             surface_config,
@@ -156,9 +187,11 @@ impl Canvas {
             strokes: vec![],
             queue,
             colorwheel_enabled: false,
+            brush_down: false,
             colorwheel_pipeline,
             _adapter: adapter,
             buffer_dimensions,
+            output_buffer,
             colorwheel: ColorWheel::default(),
             brush: Brush::default(),
         }
@@ -209,17 +242,6 @@ impl Canvas {
             }
         }
 
-        let texture_extent = wgpu::Extent3d {
-            width: self.buffer_dimensions.width,
-            height: self.buffer_dimensions.height,
-            depth_or_array_layers: 1,
-        };
-        let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("output buffer"),
-            size: self.padded_bytes_per_row() * u64::from(self.buffer_dimensions.height),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
@@ -228,16 +250,19 @@ impl Canvas {
                 origin: wgpu::Origin3d::ZERO,
             },
             wgpu::ImageCopyBuffer {
-                buffer: &output_buffer,
+                buffer: &self.output_buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(
-                        std::num::NonZeroU32::new(self.padded_bytes_per_row() as u32).unwrap(),
+                        std::num::NonZeroU32::new(
+                            Self::padded_bytes_per_row(self.buffer_dimensions) as u32,
+                        )
+                        .unwrap(),
                     ),
                     rows_per_image: None,
                 },
             },
-            texture_extent,
+            self.create_texture_extent(),
         );
         self.queue.submit(Some(encoder.finish()));
         output_texture.present();
@@ -251,13 +276,31 @@ impl Canvas {
         self.brush.dec_radius();
     }
 
-    const fn padded_bytes_per_row(&self) -> u64 {
+    const fn padded_bytes_per_row(buffer_dimensions: PhysicalSize<u32>) -> u64 {
         let bytes_per_pixel = std::mem::size_of::<u32>();
-        let unpadded_bytes_per_row = self.buffer_dimensions.width as usize * bytes_per_pixel;
+        let unpadded_bytes_per_row = buffer_dimensions.width as usize * bytes_per_pixel;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
         let padded_bytes_per_row_padding = (align - unpadded_bytes_per_row % align) % align;
         let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
         padded_bytes_per_row as u64
+    }
+
+    const fn create_texture_extent(&self) -> Extent3d {
+        Extent3d {
+            width: self.buffer_dimensions.width,
+            height: self.buffer_dimensions.height,
+            depth_or_array_layers: 1,
+        }
+    }
+
+    pub fn create_output_buffer(device: &Device, buffer_dimensions: PhysicalSize<u32>) -> Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output buffer"),
+            size: Self::padded_bytes_per_row(buffer_dimensions)
+                * u64::from(buffer_dimensions.height),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
     }
 
     pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
@@ -265,11 +308,7 @@ impl Canvas {
         self.surface_config.height = new_size.height;
         self.surface.configure(&self.device, &self.surface_config);
         self.buffer_dimensions = new_size;
+        self.output_buffer = Self::create_output_buffer(&self.device, new_size);
         self.colorwheel.set_size(new_size);
-    }
-
-    pub fn set_color(&mut self, color: [f32; 3]) {
-        self.brush.set_color(color);
-        self.colorwheel.set_color(color);
     }
 }

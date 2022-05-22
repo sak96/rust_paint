@@ -1,11 +1,10 @@
 use crate::canvas::Canvas;
-use crate::event::InputHandler;
 use wgpu::{
     Backends, DeviceDescriptor, Features, Instance, Limits, PowerPreference, RequestAdapterOptions,
 };
 
 use winit::{
-    event::{Event, WindowEvent},
+    event::{Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
@@ -35,7 +34,6 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
         None,
     ))
     .expect("Failed to create device");
-    let mut input_handler = InputHandler::new();
     let mut canvas = Canvas::new(size, surface, device, adapter, queue);
     event_loop.run(move |event, _, control_flow| {
         let _ = &instance;
@@ -57,7 +55,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
             } => *control_flow = ControlFlow::Exit,
             _ => {
                 if input.update(&event) {
-                    let redraw_window = input_handler.handle_input(&input, &mut canvas);
+                    let redraw_window = handle_input(&input, &mut canvas);
                     if redraw_window {
                         window.request_redraw();
                     }
@@ -65,4 +63,22 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
             }
         }
     });
+}
+
+fn handle_input( input: &WinitInputHelper, canvas: &mut Canvas) -> bool {
+    let mut redraw_window = false;
+    if input.key_pressed(VirtualKeyCode::Plus) {
+        canvas.inc_brush_size();
+    }
+    if input.key_pressed(VirtualKeyCode::Minus) {
+        canvas.dec_brush_size();
+    }
+    if let Some((x, y)) = input.mouse() {
+        redraw_window |= canvas.mouse_at(input.mouse_held(0), [x, y]);
+    }
+    if input.key_pressed(VirtualKeyCode::Space) {
+        canvas.color_wheel_toogle();
+        redraw_window = true;
+    }
+    redraw_window
 }
