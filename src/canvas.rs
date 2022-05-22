@@ -6,7 +6,10 @@ use wgpu::{
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     Surface, SurfaceConfiguration, VertexState,
 };
-use winit::dpi::PhysicalSize;
+use winit::{
+    dpi::PhysicalSize,
+    window::{CursorIcon, Window},
+};
 
 use crate::{
     brush::{Brush, Point},
@@ -72,8 +75,13 @@ impl Canvas {
         }
     }
 
-    pub fn color_wheel_toogle(&mut self) {
+    pub fn color_wheel_toogle(&mut self, window: &Window) {
         self.colorwheel_enabled = !self.colorwheel_enabled;
+        if self.colorwheel_enabled {
+            window.set_cursor_icon(CursorIcon::Hand);
+        } else {
+            window.set_cursor_icon(CursorIcon::Default);
+        }
     }
 
     fn create_paint_pipeline(

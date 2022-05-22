@@ -55,7 +55,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
             } => *control_flow = ControlFlow::Exit,
             _ => {
                 if input.update(&event) {
-                    let redraw_window = handle_input(&input, &mut canvas);
+                    let redraw_window = handle_input(&input, &window, &mut canvas);
                     if redraw_window {
                         window.request_redraw();
                     }
@@ -65,7 +65,7 @@ pub fn run(event_loop: EventLoop<()>, window: Window) {
     });
 }
 
-fn handle_input( input: &WinitInputHelper, canvas: &mut Canvas) -> bool {
+fn handle_input(input: &WinitInputHelper, window: &Window, canvas: &mut Canvas) -> bool {
     let mut redraw_window = false;
     if input.key_pressed(VirtualKeyCode::Plus) {
         canvas.inc_brush_size();
@@ -77,7 +77,7 @@ fn handle_input( input: &WinitInputHelper, canvas: &mut Canvas) -> bool {
         redraw_window |= canvas.mouse_at(input.mouse_held(0), [x, y]);
     }
     if input.key_pressed(VirtualKeyCode::Space) {
-        canvas.color_wheel_toogle();
+        canvas.color_wheel_toogle(window);
         redraw_window = true;
     }
     redraw_window
