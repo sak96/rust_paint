@@ -207,7 +207,7 @@ impl Canvas {
 
     pub fn redraw_canvas(&mut self) {
         let vertex_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
-            label: None,
+            label: Some("vertex buffer"),
             contents: bytemuck::cast_slice(&self.strokes),
             usage: BufferUsages::VERTEX,
         });
@@ -232,7 +232,7 @@ impl Canvas {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: None,
+                label: Some("render pass"),
                 color_attachments: &[RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
