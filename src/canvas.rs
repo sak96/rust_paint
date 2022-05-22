@@ -211,10 +211,17 @@ impl Canvas {
             contents: bytemuck::cast_slice(&self.strokes),
             usage: BufferUsages::VERTEX,
         });
-        let output_texture = self
-            .surface
-            .get_current_texture()
-            .expect("failed to get texture for rendering");
+        let output_texture = loop {
+            match self.surface.get_current_texture() {
+                // output texture
+                Ok(texture) => break texture,
+                // retry
+                Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Timeout) => {}
+                err => {
+                    panic!("Failed to get texture for rendering: {:?}", err)
+                }
+            }
+        };
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor {
