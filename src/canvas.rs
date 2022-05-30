@@ -40,8 +40,8 @@ impl Canvas {
         if self.colorwheel_enabled && brush_down && !prev_brush_down {
             let buffer_slice = self.output_buffer.slice(..);
             let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
-            let width = new_pos[0].round().abs() as usize;
-            let height = new_pos[1].round().abs() as usize;
+            let width = Self::float_to_usize(new_pos[0]);
+            let height = Self::float_to_usize(new_pos[1]);
             self.device.poll(wgpu::Maintain::Wait);
             let mut color_set = false;
             if futures::executor::block_on(buffer_future).is_ok() {
@@ -327,6 +327,11 @@ impl Canvas {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         })
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    fn float_to_usize(length: f32) -> usize {
+        length.round().abs() as usize
     }
 
     pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
