@@ -51,10 +51,10 @@ impl Canvas {
                     .nth(height)
                 {
                     if let Some(color_rgba) = padded_row.chunks(4).nth(width) {
+                        let blue = f32::from(color_rgba[0]) / 0xFF as f32;
+                        let green = f32::from(color_rgba[1]) / 0xFF as f32;
                         let red = f32::from(color_rgba[2]) / 0xFF as f32;
-                        let green = f32::from(color_rgba[0]) / 0xFF as f32;
-                        let blue = f32::from(color_rgba[1]) / 0xFF as f32;
-                        let color = [red, blue, green];
+                        let color = [red, green, blue];
                         self.colorwheel.set_color(color);
                         self.brush.set_color(color);
                         color_set = true;
@@ -175,9 +175,20 @@ impl Canvas {
         adapter: Adapter,
         queue: Queue,
     ) -> Self {
+        let texture_format = surface
+            .get_preferred_format(&adapter)
+            .expect("Surface doesn't have preferred format");
+        assert!(
+            [
+                wgpu::TextureFormat::Bgra8Unorm,
+                wgpu::TextureFormat::Bgra8UnormSrgb
+            ]
+            .contains(&texture_format),
+            "The application only works with Bgra8 format"
+        );
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            format: surface.get_preferred_format(&adapter).unwrap(),
+            format: texture_format,
             width: window_size.width,
             height: window_size.height,
             present_mode: wgpu::PresentMode::Fifo,
