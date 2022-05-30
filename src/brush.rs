@@ -13,7 +13,6 @@ pub struct Brush {
 pub struct Point {
     color: [f32; 3],
     pos: [f32; 2],
-    radius: f32,
 }
 
 impl Point {
@@ -41,7 +40,6 @@ impl Brush {
     pub fn draw_stroke(&mut self, down: bool, pos: [f32; 2]) -> Option<(Point, Point)> {
         let prev_pos = self.pos;
         let prev_down = self.down;
-        let radius = self.radius;
         self.down = down;
         self.pos = pos;
         if prev_down && pos != prev_pos {
@@ -50,9 +48,8 @@ impl Brush {
                 Point {
                     pos: prev_pos,
                     color,
-                    radius,
                 },
-                Point { color, pos, radius },
+                Point { color, pos },
             ))
         } else {
             None
