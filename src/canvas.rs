@@ -63,12 +63,11 @@ impl Canvas {
             }
             self.output_buffer.unmap();
             color_set
-        } else if let Some((start, end)) = self
+        } else if let Some(points) = self
             .brush
             .draw_stroke(brush_down, self.colorwheel.get_canvas_pos(new_pos))
         {
-            self.strokes.push(start);
-            self.strokes.push(end);
+            self.strokes.extend_from_slice(&points);
             true
         } else {
             false
@@ -115,7 +114,7 @@ impl Canvas {
                 }],
             }),
             primitive: PrimitiveState {
-                topology: PrimitiveTopology::LineList,
+                topology: PrimitiveTopology::TriangleList,
                 ..PrimitiveState::default()
             },
             depth_stencil: None,
