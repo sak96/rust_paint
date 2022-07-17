@@ -13,6 +13,7 @@ mod colorwheel;
 mod paint;
 
 fn main() {
+    env_logger::init();
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();
     paint::run(event_loop, window);
