@@ -31,7 +31,7 @@ impl Point {
         0 => Float32x3,  1 => Float32x2, 2 => Float32
     ];
 
-    pub const fn desc<'a>() -> VertexBufferLayout<'a> {
+    #[must_use] pub const fn desc<'a>() -> VertexBufferLayout<'a> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: VertexStepMode::Vertex,

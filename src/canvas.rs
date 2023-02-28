@@ -318,7 +318,7 @@ impl Canvas {
         }
     }
 
-    pub fn create_output_buffer(device: &Device, buffer_dimensions: PhysicalSize<u32>) -> Buffer {
+    #[must_use] pub fn create_output_buffer(device: &Device, buffer_dimensions: PhysicalSize<u32>) -> Buffer {
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output buffer"),
             size: Self::padded_bytes_per_row(buffer_dimensions)
