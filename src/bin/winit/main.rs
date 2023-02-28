@@ -1,7 +1,23 @@
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::float_cmp)]
+
 use crate::canvas::Canvas;
 use wgpu::{
     Backends, DeviceDescriptor, Features, Instance, Limits, PowerPreference, RequestAdapterOptions,
 };
+
+use rusty_paint::canvas;
+
+fn main() {
+    env_logger::init();
+    let event_loop = EventLoop::new();
+    let window = Window::new(&event_loop).unwrap();
+    run(event_loop, window);
+}
 
 use winit::{
     event::{Event, VirtualKeyCode, WindowEvent},
