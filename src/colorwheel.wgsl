@@ -1,22 +1,22 @@
-let corners_constants = array<vec4<f32>, 4>(
+const corners_constants = array<vec4<f32>, 4>(
     vec4<f32>(1.0,-1.0,0.0,1.0),
     vec4<f32>(1.0,1.0,0.0,1.0),
     vec4<f32>(-1.0,-1.0,0.0,1.0),
     vec4<f32>(-1.0,1.0,0.0,1.0),
 );
-let margin: f32 = 0.2;
+const margin: f32 = 0.2;
 
 struct ColorWheel {
-    color: vec4<f32>;
-    resolution: vec2<f32>;
+    color: vec4<f32>,
+    resolution: vec2<f32>,
 };
 
 var<push_constant> pc: ColorWheel;
 
-[[stage(vertex)]]
+@vertex
 fn vs_main(
-    [[builtin(vertex_index)]] in_vertex_index: u32
-) -> [[builtin(position)]]  vec4<f32> {
+    @builtin(vertex_index) in_vertex_index: u32
+) -> @builtin(position)  vec4<f32> {
     // https://github.com/gfx-rs/naga/issues/1910
     var corners = corners_constants;
     return corners[in_vertex_index];
@@ -58,8 +58,8 @@ fn color_wheel(uv: vec2<f32>)-> vec4<f32> {
     );
 }
 
-[[stage(fragment)]]
-fn fs_main([[builtin(position)]] in: vec4<f32>) -> [[location(0)]] vec4<f32> {
+@fragment
+fn fs_main(@builtin(position) in: vec4<f32>) -> @location(0) vec4<f32> {
     var normal_in: vec2<f32> = in.xy / pc.resolution.xy;
     var down_right_in = (normal_in - vec2<f32>(0.73, 0.02)) * 4.0;
     return color_square_scaled(down_right_in) + color_wheel(down_right_in);

@@ -6,10 +6,12 @@ use wgpu::{
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
     Surface, SurfaceConfiguration, VertexState,
 };
-use winit::{
-    dpi::PhysicalSize,
-    window::{CursorIcon, Window},
-};
+
+#[derive(Clone, Copy)]
+pub struct PhysicalSize {
+    pub width: u32,
+    pub height: u32,
+}
 
 use crate::{
     brush::{Brush, Point},
@@ -30,7 +32,7 @@ pub struct Canvas {
     colorwheel_pipeline: RenderPipeline,
     surface_config: SurfaceConfiguration,
     colorwheel_enabled: bool,
-    buffer_dimensions: PhysicalSize<u32>,
+    buffer_dimensions: PhysicalSize,
 }
 
 impl Canvas {
@@ -38,13 +40,13 @@ impl Canvas {
         let prev_brush_down = self.brush_down;
         self.brush_down = brush_down;
         if self.colorwheel_enabled && brush_down && !prev_brush_down {
-            let buffer_slice = self.output_buffer.slice(..);
-            let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
             let width = Self::float_to_usize(new_pos[0]);
             let height = Self::float_to_usize(new_pos[1]);
-            self.device.poll(wgpu::Maintain::Wait);
+            let buffer_slice = self.output_buffer.slice(..);
             let mut color_set = false;
-            if futures::executor::block_on(buffer_future).is_ok() {
+            buffer_slice.map_async(wgpu::MapMode::Read, Result::unwrap);
+            self.device.poll(wgpu::Maintain::Wait);
+            {
                 let padded_buffer = buffer_slice.get_mapped_range();
                 if let Some(padded_row) = padded_buffer
                     .chunks(Self::padded_bytes_per_row(self.buffer_dimensions) as usize)
@@ -74,20 +76,19 @@ impl Canvas {
         }
     }
 
-    pub fn color_wheel_toogle(&mut self, window: &Window) {
+    pub const fn is_color_wheel_enabled(&self) -> bool {
+        self.colorwheel_enabled
+    }
+
+    pub fn color_wheel_toggle(&mut self) {
         self.colorwheel_enabled = !self.colorwheel_enabled;
-        if self.colorwheel_enabled {
-            window.set_cursor_icon(CursorIcon::Hand);
-        } else {
-            window.set_cursor_icon(CursorIcon::Default);
-        }
     }
 
     fn create_paint_pipeline(
         device: &Device,
         surface_config: &SurfaceConfiguration,
     ) -> RenderPipeline {
-        let paint_shader = device.create_shader_module(&ShaderModuleDescriptor {
+        let paint_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("paint shader"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shader.wgsl"))),
         });
@@ -107,11 +108,11 @@ impl Canvas {
             fragment: Some(FragmentState {
                 module: &paint_shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
@@ -127,7 +128,7 @@ impl Canvas {
         device: &Device,
         surface_config: &SurfaceConfiguration,
     ) -> RenderPipeline {
-        let colorwheel_shader = device.create_shader_module(&ShaderModuleDescriptor {
+        let colorwheel_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("color wheel shader"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("colorwheel.wgsl"))),
         });
@@ -151,11 +152,11 @@ impl Canvas {
             fragment: Some(FragmentState {
                 module: &colorwheel_shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleStrip,
@@ -168,29 +169,27 @@ impl Canvas {
     }
 
     pub fn new(
-        window_size: PhysicalSize<u32>,
+        window_size: PhysicalSize,
         surface: Surface,
         device: Device,
         adapter: Adapter,
         queue: Queue,
     ) -> Self {
-        let texture_format = surface
-            .get_preferred_format(&adapter)
-            .expect("Surface doesn't have preferred format");
-        assert!(
-            [
-                wgpu::TextureFormat::Bgra8Unorm,
-                wgpu::TextureFormat::Bgra8UnormSrgb
-            ]
-            .contains(&texture_format),
-            "The application only works with Bgra8 format"
-        );
+        let surface_caps = surface.get_capabilities(&adapter);
+        let texture_format = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.describe().srgb)
+            .unwrap_or(surface_caps.formats[0]);
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format: texture_format,
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
         };
         let buffer_dimensions = window_size;
         surface.configure(&device, &surface_config);
@@ -228,7 +227,7 @@ impl Canvas {
                 // retry
                 Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Timeout) => {}
                 err => {
-                    panic!("Failed to get texture for rendering: {:?}", err)
+                    panic!("Failed to get texture for rendering: {err:?}")
                 }
             }
         };
@@ -243,14 +242,14 @@ impl Canvas {
                 .create_view(&wgpu::TextureViewDescriptor::default());
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("render pass"),
-                color_attachments: &[RenderPassColorAttachment {
+                color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Clear(Color::WHITE),
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: None,
             });
             rpass.set_pipeline(&self.paint_pipeline);
@@ -301,7 +300,7 @@ impl Canvas {
         self.brush.dec_radius();
     }
 
-    const fn padded_bytes_per_row(buffer_dimensions: PhysicalSize<u32>) -> u64 {
+    const fn padded_bytes_per_row(buffer_dimensions: PhysicalSize) -> u64 {
         let bytes_per_pixel = std::mem::size_of::<u32>();
         let unpadded_bytes_per_row = buffer_dimensions.width as usize * bytes_per_pixel;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
@@ -318,7 +317,8 @@ impl Canvas {
         }
     }
 
-    #[must_use] pub fn create_output_buffer(device: &Device, buffer_dimensions: PhysicalSize<u32>) -> Buffer {
+    #[must_use]
+    pub fn create_output_buffer(device: &Device, buffer_dimensions: PhysicalSize) -> Buffer {
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("output buffer"),
             size: Self::padded_bytes_per_row(buffer_dimensions)
@@ -333,7 +333,7 @@ impl Canvas {
         length.round().abs() as usize
     }
 
-    pub fn resize_window(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn resize_window(&mut self, new_size: PhysicalSize) {
         self.surface_config.width = new_size.width;
         self.surface_config.height = new_size.height;
         self.surface.configure(&self.device, &self.surface_config);

@@ -1,4 +1,4 @@
-use winit::dpi::PhysicalSize;
+use crate::canvas::PhysicalSize;
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -13,10 +13,11 @@ impl ColorWheel {
         self.color = [color[0], color[1], color[2], 1.0];
     }
 
-    #[must_use] pub fn get_canvas_pos(&self, pos: [f32; 2]) -> [f32; 2] {
+    #[must_use]
+    pub fn get_canvas_pos(&self, pos: [f32; 2]) -> [f32; 2] {
         [pos[0] / self.size[0] - 0.5, -pos[1] / self.size[1] + 0.5]
     }
-    pub fn set_size(&mut self, size: PhysicalSize<u32>){
+    pub fn set_size(&mut self, size: PhysicalSize) {
         self.size[0] = size.width as f32;
         self.size[1] = size.height as f32;
     }
