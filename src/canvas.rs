@@ -44,9 +44,12 @@ impl Canvas {
             let height = Self::float_to_usize(new_pos[1]);
             let buffer_slice = self.output_buffer.slice(..);
             let mut color_set = false;
-            buffer_slice.map_async(wgpu::MapMode::Read, Result::unwrap);
+            let (tx, rx) = futures::channel::oneshot::channel();
+            buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+                tx.send(result).unwrap();
+            });
             self.device.poll(wgpu::Maintain::Wait);
-            {
+            if futures::executor::block_on(async {rx.await}).is_ok() {
                 let padded_buffer = buffer_slice.get_mapped_range();
                 if let Some(padded_row) = padded_buffer
                     .chunks(Self::padded_bytes_per_row(self.buffer_dimensions) as usize)
